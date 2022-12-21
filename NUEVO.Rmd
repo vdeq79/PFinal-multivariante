@@ -1,0 +1,47 @@
+# Estadística Multivariante. Práctica final.
+
+Ponemos la ruta de trabajo al directorio actual de RMarkdown:
+```{r echo=True}
+install.packages("rstudioapi")
+library(rstudioapi)
+setwd(dirname(getActiveDocumentContext()$path))
+```
+
+Cargamos nuestro csv:
+```{r echo=True}
+library(foreign)
+datos <- read.csv("diabetes.csv")
+original_datos <- datos
+```
+
+## Análisis exploratorio univariante
+
+```{r echo=True}
+    summary(datos)
+```
+
+
+
+
+
+
+
+
+
+
+```{r echo=True, include=TRUE, warning=FALSE}
+not_available <- function(data,na.rm=F){
+  data[is.na(data)] <- mean(data, na.rm=T)
+  data
+}
+
+for (i in 1:ncol(datos)){
+  datos[,i]<-not_available(datos[,i])
+}
+
+```
+
+```{r echo=True}
+```
+
+## Análisis exploratorio multivariante
