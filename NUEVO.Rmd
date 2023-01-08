@@ -16,32 +16,139 @@ original_datos <- datos
 
 ## Análisis exploratorio univariante
 
+Con la función summary, podemos ver las medidas de dispersión:
 ```{r echo=True}
     summary(datos)
 ```
 
-
-
-
-
-
-
-
-
-
-```{r echo=True, include=TRUE, warning=FALSE}
-not_available <- function(data,na.rm=F){
-  data[is.na(data)] <- mean(data, na.rm=T)
-  data
-}
-
-for (i in 1:ncol(datos)){
-  datos[,i]<-not_available(datos[,i])
-}
-
+Veamos los outliers existentes mediante boxplot:
+```{r echo=True}
+par(mfrow=c(1,1))
+boxplot(original_datos, main="Análisis exploratorio de datos")
 ```
+
+Sustituimos estos outliers por la media con la siguiente función:
+```{r echo=True}
+outlier2<-function(data,na.rm=T) {
+  H<-1.5*IQR(data)
+  
+  data[data<quantile(data,0.25,na.rm = T)-H]<-NA
+  
+  data[data>quantile(data,0.75, na.rm = T)+H]<-NA
+  
+  data[is.na(data)]<-mean(data, na.rm = T)
+  
+  H<-1.5*IQR(data)
+  
+  if (TRUE %in% (data<quantile(data,0.25,na.rm = T)-H) | TRUE %in% (data>quantile(data,0.75,na.rm = T)+H))
+    outlier2(data)
+  else
+    return(data)
+}
+```
+
+```{r echo=Ture}
+  for(i in 1:ncol(datos)){
+    datos[,i] <- outlier2(datos[,i]) 
+  }
+```
+
+```{r echo=True}
+  par(mfrow=c(1,2))
+  boxplot(original_datos, main="Datos originales")
+  boxplot(datos, main="Datos sin outliers")
+```
+
 
 ```{r echo=True}
 ```
 
+
+**Distribuciones individuales**
+```{r}
+# Representación mediante Histograma de cada variable para cada especie 
+par(mfcol = c(3, 3))
+for (k in 1:ncol(datos)) {
+  j0 <- names(datos)[k]
+    x0 <- seq(min(datos[, k]), max(datos[, k]), le = 50)
+    x <- datos[,k]
+    hist(x, proba = T, col = grey(0.8), main = j0, xlab = j0)
+    lines(x0, dnorm(x0, mean(x), sd(x)), col = "red", lwd = 2)
+}
+```
+
+
+**Gráficos qqplots**
+```{r}
+# Representación de cuantiles normales de cada variable 
+par(mfrow=c(3,3))
+for (k in 1:ncol(datos)) {
+  j0 <- names(datos)[k]
+  x <- datos[,k]
+  qqnorm(x, main = j0, pch = 19, col=k+1)
+  qqline(x)
+}
+```
+Este análisis exploratorio puede darnos una idea de la posible distribución normal de las variables univariadas, pero siempre es mejor hacer los respectivos test de normalidad.
+**Test de normalidad univariantes (Shapiro-Wilk)**
+```{r}
+library(reshape2)
+library(knitr)
+library(dplyr)
+datos_tidy <- melt(datos, value.name = "valor", id.vars= NULL)
+aggregate(valor~variable, data=datos_tidy, FUN = function(x){shapiro.test(x)$p.value})
+```
+
+
 ## Análisis exploratorio multivariante
+
+**Análisis de la correlación**
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+# Test de Bartlett
+#install.packages("psych")
+library(psych)
+# Se normalizan los datos
+datos_normalizados<-scale(datos)
+# Se hace el test de esfericidad
+cortest.bartlett(cor(datos_normalizados), n = nrow(datos))
+```
+Como podemos observar, el test sale significativo y por ende 
+la hipótesis nula que afirma que la matriz de correlaciones es la identidad queda descartada.
+Al haber relación entre las variables, tiene sentido plantearse análisis ACP o AF.
+
+Procedemos pues a aplicarle ACP ya que hemos arreglado los datos outliers.
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+# Realización del ACP
+PCA<-prcomp(datos, scale=T, center = T)
+
+# El campo "rotation" del objeto "PCA" es una matriz cuyas columnas
+# son los coeficientes de las componentes principales, es decir, el
+# peso de cada variable en la correspondiente componente principal
+PCA$rotation
+
+# En el campo "sdev" del objeto "PCA" y con la función summary aplicada
+# al objeto, obtenemos información relevante: desviaciones típicas de 
+# cada componente principal, proporción de varianza explicada y acumulada.
+PCA$sdev
+summary(PCA)
+```  
+
+Ahora debemos elegir cuántas componentes principales vamos a elegir. Utilizaremos la Regla de Abdi para 
+ver la media de las varianzas explicadas por las componentes principales y seleccionar
+aquellas cuya proporción de varianza explicada supera a la media.
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+PCA$sdev^2
+mean(PCA$sdev^2)
+```
+Podemos observar que solo las 3 primeras componentes principales superan la media obtenida, aunque 
+consideramos que incluir la cuarta componente sería beneficioso dada la cercanía a la media y que con 
+solo 3 componentes principales la varianza acumulada explicada sería de 0.5788 mientras que añadiendo la cuarta 
+sería de 0.6898.
+
+A continuación, complementaremos esta decisión aplicando el método gráfico del codo.
+Graficaremos las varianzas acumaladas y observaremos cuándo su crecimiento se estanca.
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+names(summary(PCA))
+summary(PCA)
+```
