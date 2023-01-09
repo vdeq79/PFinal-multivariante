@@ -7,6 +7,14 @@ library(rstudioapi)
 setwd(dirname(getActiveDocumentContext()$path))
 ```
 
+```{r echo=True}
+install.packages('cluster')
+install.packages('factoextra')
+library(cluster)
+library(factoextra)
+```
+
+
 Cargamos nuestro csv:
 ```{r echo=True}
 library(foreign)
@@ -60,10 +68,6 @@ outlier2<-function(data,na.rm=T) {
 ```
 
 
-```{r echo=True}
-```
-
-
 **Distribuciones individuales**
 ```{r}
 # Representación mediante Histograma de cada variable para cada especie 
@@ -90,6 +94,9 @@ for (k in 1:ncol(datos)) {
 }
 ```
 Este análisis exploratorio puede darnos una idea de la posible distribución normal de las variables univariadas, pero siempre es mejor hacer los respectivos test de normalidad.
+
+
+
 **Test de normalidad univariantes (Shapiro-Wilk)**
 ```{r}
 library(reshape2)
@@ -103,6 +110,20 @@ aggregate(valor~variable, data=datos_tidy, FUN = function(x){shapiro.test(x)$p.v
 ## Análisis exploratorio multivariante
 
 **Análisis de la correlación**
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+library(ggcorrplot)
+library(polycor)
+library(corrplot)
+poly_cor<-hetcor(datos)$correlations
+ggcorrplot(poly_cor, type="lower",hc.order=T)
+```
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+par(mfrow=c(1,1))
+corrplot(cor(datos), order = "hclust", tl.col='black', tl.cex=1)
+```
+
 ```{r echo=TRUE, include=TRUE, warning=FALSE}
 # Test de Bartlett
 #install.packages("psych")
@@ -112,9 +133,10 @@ datos_normalizados<-scale(datos)
 # Se hace el test de esfericidad
 cortest.bartlett(cor(datos_normalizados), n = nrow(datos))
 ```
-Como podemos observar, el test sale significativo y por ende 
-la hipótesis nula que afirma que la matriz de correlaciones es la identidad queda descartada.
+Como podemos observar, el test sale significativo y por ende la hipótesis nula que afirma que la matriz de correlaciones es la identidad queda descartada.
 Al haber relación entre las variables, tiene sentido plantearse análisis ACP o AF.
+
+# Reducción de la dimensión mediante un análisis de componentes principales
 
 Procedemos pues a aplicarle ACP ya que hemos arreglado los datos outliers.
 ```{r echo=TRUE, include=TRUE, warning=FALSE}
@@ -133,22 +155,140 @@ PCA$sdev
 summary(PCA)
 ```  
 
-Ahora debemos elegir cuántas componentes principales vamos a elegir. Utilizaremos la Regla de Abdi para 
-ver la media de las varianzas explicadas por las componentes principales y seleccionar
-aquellas cuya proporción de varianza explicada supera a la media.
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+library("ggplot2")
+par(mfrow=c(1,1))
+
+# Proporción de varianza explicada
+varianza_explicada <- PCA$sdev^2 / sum(PCA$sdev^2)
+ggplot(data = data.frame(varianza_explicada, pc = 1:ncol(datos)),
+       aes(x = pc, y = varianza_explicada, fill=varianza_explicada )) +
+  geom_col(width = 0.3) +
+  scale_y_continuous(limits = c(0,0.6)) + theme_bw() +
+  labs(x = "Componente principal", y= " Proporción de varianza explicada")
+```
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+# Proporción de varianza explicada acumulada
+varianza_acum<-cumsum(varianza_explicada)
+ggplot( data = data.frame(varianza_acum, pc = 1:ncol(datos)),
+        aes(x = pc, y = varianza_acum ,fill=varianza_acum )) +
+  geom_col(width = 0.5) +
+  scale_y_continuous(limits = c(0,1)) +
+  theme_bw() +
+  labs(x = "Componente principal",
+       y = "Proporción varianza explicada acumulada")
+```  
+
+Ahora debemos elegir cuántas componentes principales vamos a elegir. Utilizaremos la Regla de Abdi para ver la media de las varianzas explicadas por las componentes principales y seleccionar aquellas cuya proporción de varianza explicada supera a la media.
 
 ```{r echo=TRUE, include=TRUE, warning=FALSE}
 PCA$sdev^2
 mean(PCA$sdev^2)
 ```
-Podemos observar que solo las 3 primeras componentes principales superan la media obtenida, aunque 
-consideramos que incluir la cuarta componente sería beneficioso dada la cercanía a la media y que con 
-solo 3 componentes principales la varianza acumulada explicada sería de 0.5788 mientras que añadiendo la cuarta 
-sería de 0.6898.
+Podemos observar que solo las 3 primeras componentes principales superan la media obtenida, aunque consideramos que incluir la cuarta componente sería beneficioso dada la cercanía a la media y que con solo 3 componentes principales la varianza acumulada explicada sería de 0.5788 mientras que añadiendo la cuarta sería de 0.6898.
 
 A continuación, complementaremos esta decisión aplicando el método gráfico del codo.
 Graficaremos las varianzas acumaladas y observaremos cuándo su crecimiento se estanca.
+```{r echo=True}
+fviz_nbclust(scale(datos), kmeans, method = 'wss')
+```
+
+
+
+# Reducción de la dimensión mediante un análisis factorial
+Como ya hemos visto en el apartado anterior, tiene sentido plantear un análisis factorial.
+```{r echo=True}
+scree(poly_cor)
+fa.parallel(poly_cor,n.obs=200,fa="fa",fm="minres") 
+```
+
+Observando el gráfico y el resultado del análisis paralelo, el número óptimo de factores es 4.
+
 ```{r echo=TRUE, include=TRUE, warning=FALSE}
-names(summary(PCA))
-summary(PCA)
+modelo1<-fa(poly_cor,
+            nfactors = 4,
+            rotate = "none",
+            fm="mle") # modelo m?xima verosimilitud
+
+modelo2<-fa(poly_cor,
+            nfactors = 4,
+            rotate = "none",
+            fm="minres") # modelo m?nimo residuo
+```
+
+Comparando las comunalidades
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+sort(modelo1$communality,decreasing = T)->c1
+sort(modelo2$communality,decreasing = T)->c2
+head(cbind(c1,c2))
+```
+
+Comparacion de las unicidades, es decir la proporción de varianza que no ha sido explicada por el factor (1-comunalidad)
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+sort(modelo1$uniquenesses,decreasing = T)->u1
+sort(modelo2$uniquenesses,decreasing = T)->u2
+head(cbind(u1,u2))
+```
+
+# Análisis discriminante: Clasificadores
+
+## Análisis de la normalidad multivariante
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+library(MVN)
+outliers <- mvn(data = datos[,-1], mvnTest = "hz", multivariateOutlierMethod = "quan")
+```
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+
+royston_test <- mvn(data = datos[,-1], mvnTest = "royston", multivariatePlot = "qq")
+royston_test$multivariateNormality
+
+hz_test <- mvn(data = datos[,-1], mvnTest = "hz")
+hz_test$multivariateNormality
+
+```
+
+
+## Clasificadores
+
+### Lineal
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+library(MASS)
+
+modelo_lda <- lda(formula = Outcome ~ Pregnancies + Glucose + BloodPressure + SkinThickness + Insulin + BMI + DiabetesPedigreeFunction + Age,data = datos)
+modelo_lda
+
+```
+
+### Cuadrático
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+modelo_qda <- qda(formula = Outcome ~ Pregnancies + Glucose + BloodPressure + SkinThickness + Insulin + BMI + DiabetesPedigreeFunction + Age,data = datos)
+modelo_qda
+
+```
+
+## Resultados de los Clasificadores
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+install.packages("biotools")
+library("biotools")
+pred <- predict(modelo_lda, dimen = 1)
+confusionmatrix(datos$Outcome, pred$class)
+
+# Porcentaje de errores de clasificación
+trainig_error <- mean(datos$Outcome != pred$class) * 100
+paste("trainig_error=", trainig_error, "%")
+```
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+install.packages("biotools")
+library("biotools")
+pred <- predict(modelo_qda, dimen = 1)
+confusionmatrix(datos$Outcome, pred$class)
+
+# Porcentaje de errores de clasificación
+trainig_error <- mean(datos$Outcome != pred$class) * 100
+paste("trainig_error=", trainig_error, "%")
 ```
