@@ -1,0 +1,361 @@
+---
+title: " Estadística Multivariante. Práctica final."
+author: Francisco Cámara Parra, Gabriel Olea Olea y XuSheng Zheng.
+date: "`r Sys.Date()`"
+output:
+  html_document: 
+    
+    toc: true
+    toc_depth: 5
+    number_sections: false
+    toc_float: 
+      collapsed: false
+      smooth_scroll: false
+  pdf_document: default
+---
+
+```{=html}
+<style>
+.math {
+  font-size: 8.25pt;options(encoding = 'UTF-8')
+}
+</style>
+```
+<div style="text-align: justify">
+
+<!-- Ponemos la ruta de trabajo al directorio actual de RMarkdown -->
+
+```{r echo=FALSE, include=FALSE, warning=FALSE}
+#install.packages("rstudioapi")
+library(rstudioapi)
+#ssetwd(dirname(getActiveDocumentContext()$path))
+```
+
+<!-- Instalación y carga de librerías que usaremos -->
+
+```{r echo=FALSE, include=FALSE, warning=FALSE}
+#install.packages('cluster')
+#install.packages('factoextra')
+#install.packages('psych')
+#install.packages('biotools')
+library(biotools)
+library(psych)
+library(cluster)
+library(factoextra)
+library(reshape2)
+library(knitr)
+library(dplyr)
+library(foreign)
+library(ggcorrplot)
+library(polycor)
+library(corrplot)
+library(ggplot2)
+library(MVN)
+library(MASS)
+```
+
+En primer lugar, vamos a cargar nuestro dataset. Lo cargamos en formato csv:
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+datos <- read.csv("diabetes.csv")
+original_datos <- datos
+datos_no_outcome = datos[,-9] # Datos sin la variable respuesta
+datos_normalizados<-scale(datos_no_outcome) # Datos normalizados
+```
+
+# Análisis exploratorio univariante
+
+## Medidas estadísticas
+
+Comenzaremos realizando un análisis exploratorio de nuestros datos, obteniendo algunas medidas de dispersión típicas acerca de las variables de forma separada.
+
+Por ejemplo, con la función `summary`, podemos ver las medidas típicas de la estadística descriptiva, tales como su media, el máximo, el mínimo o sus cuartiles y con la función `sapply` calculamos las desviaciones típicas de los datos:
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+print("Medidas estadísticas:")
+summary(datos)
+print("Desviaciones típicas:")
+sapply(datos, sd)
+```
+
+## Análisis de los valores extremos
+
+Veamos ahora los valores extremos o *outliers* existentes apoyándonos en boxplot:
+
+```{r echo=TRUE, warning=FALSE, include=TRUE}
+par(mfrow=c(1,1))
+boxplot(original_datos, main="Análisis exploratorio de datos", las=2)
+```
+
+Podemos ver los distintos outliers para cada variable representados por los circulos blancos. Vamos a sustituir estos outliers por la media de cada variable con el siguiente código:
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+outlier2<-function(data,na.rm=T) {
+  H<-1.5*IQR(data)
+  
+  data[data<quantile(data,0.25,na.rm = T)-H]<-NA
+  
+  data[data>quantile(data,0.75, na.rm = T)+H]<-NA
+  
+  data[is.na(data)]<-mean(data, na.rm = T)
+  
+  H<-1.5*IQR(data)
+  
+  if (TRUE %in% (data<quantile(data,0.25,na.rm = T)-H) | TRUE %in% (data>quantile(data,0.75,na.rm = T)+H))
+    outlier2(data)
+  else
+    return(data)
+}
+```
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+  for(i in 1:ncol(datos)){
+    datos[,i] <- outlier2(datos[,i]) 
+  }
+```
+
+Como podemos ver en el siguiente gráfico, se comparan los datos con outliers y sustituidos por su media:
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+  par(mfrow=c(1,2))
+  boxplot(original_datos, main="Datos originales",las=2)
+  boxplot(datos, main="Datos sin outliers",las=2)
+```
+
+## Análisis de la normalidad univariante
+
+Vamos a estudiar la presencia de la distribución normal en cada de una de las variables de nuestros datos a través de distintas técnicas visuales y estadísticas.
+
+### Distribuciones individuales
+
+A continuación, vamos a mostrar un gráfico en el que para cada variable se ve un histograma con la información de esa variable y por encima, con una línea roja, una distribución normal con la media y desviación típica de cada variable, para ver cuánto se aproxima a la normalidad la distribución de los datos. Se observa que hemos eliminado la variable respuesta de este análisis porque no tiene sentido realizarlo en una variable discreta.
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+# Representación mediante Histograma 
+par(mfcol = c(3, 3))
+for (k in 1:ncol(datos_no_outcome)) {
+  j0 <- names(datos_no_outcome)[k]
+    x0 <- seq(min(datos_no_outcome[, k]), max(datos_no_outcome[, k]), le = 50)
+    x <- datos_no_outcome[,k]
+    hist(x, proba = T, col = grey(0.8), main = j0, xlab = j0)
+    lines(x0, dnorm(x0, mean(x), sd(x)), col = "red", lwd = 2)
+}
+```
+
+Como podemos observar, algunas variables sí se ajustan a la normalidad, pero solo por algunas zonas y muy pocas, con lo cual podemos intuir que nuestros datos no presentan normalidad.
+
+### Gráficos qqplot
+
+Otro método visual para detectar la normalidad son los gráficos qqplot.
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+# Representación de cuantiles normales de cada variable 
+par(mfrow=c(3,3))
+for (k in 1:ncol(datos_no_outcome)) {
+  j0 <- names(datos_no_outcome)[k]
+  x <- datos_no_outcome[,k]
+  qqnorm(x, main = j0, pch = 19, col=k+1)
+  qqline(x)
+}
+```
+
+De nuevo, en estos gráficos podemos observar que la linea se ajusta bien en algunas variables, pero solo en algunas zonas, con lo cual también podemos intuir por esté método visual que los datos no presentan normalidad.
+
+Si bien este análisis exploratorio puede darnos una idea de la posible normalidad o no de las variables univariadas, siempre es mejor hacer los respectivos test de normalidad.
+
+### Test de normalidad univariantes (Shapiro-Wilk)
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+datos_tidy <- melt(datos_no_outcome, value.name = "valor", id.vars= NULL)
+aggregate(valor~variable, data=datos_tidy, FUN = function(x){shapiro.test(x)$p.value})
+```
+
+Como podemos observar en los resultados de este test, el p-valor es muy bajo para todas las variables, con lo cual **rechazamos la presencia de normalidad** univariante en nuestros datos.
+
+# Análisis exploratorio multivariante
+
+En este apartado, vamos a realizar un análisis de los datos pero estudiando todas las variables en su conjunto, utilizando diversas técnicas que iremos viendo en cada apartado.
+
+## Análisis de la correlación
+
+En primer lugar, vamos a estudiar la relación entre las variables, ya que si las variables no guardan ninguna correlación, no tendría sentido aplicar técnicas como ACP o AF, po lo que el primer paso es comprobar esto.
+
+Primero, veamos la presencia de correlación gráficamente:
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+poly_cor<-hetcor(datos)$correlations
+ggcorrplot(poly_cor, type="lower",hc.order=T)
+```
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+par(mfrow=c(1,1))
+corrplot(cor(datos), order = "hclust", tl.col='black', tl.cex=1)
+```
+
+Como podemos observar en ambos gráficos sí existe correlación entre las distintas variables, pero para afirmarlo es mejor utilizar el test correspondiente.
+
+Pprocederemos con el test de Bartlett, el cual parte de la hipótesis nula de que la matriz de covarianzas es la identidad, esto es, las variables son independientes. Observamos también que para este test necesitamos hacerlo con los datos normalizados
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+# Se hace el test de esfericidad
+cortest.bartlett(cor(datos_normalizados), n = nrow(datos))
+```
+
+Como podemos observar, el test sale significativo y por ende la hipótesis nula que afirma que la matriz de correlaciones es la identidad queda descartada. Al haber relación entre las variables, tiene sentido plantearse análisis ACP o AF.
+
+## Análisis de la normalidad multivariante
+
+Al igual que hemos hecho en el apartado anterior vamos a analizar la normalidad presente en los datos, pero esta vez tratando a las variables en su conjunto como un vector aleatorio.
+
+Vamos a realizar directamente el test correspondiente:
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+royston_test <- mvn(data = datos_no_outcome, mvnTest = "royston", multivariatePlot = "qq")
+royston_test$multivariateNormality
+
+hz_test <- mvn(data = datos_no_outcome, mvnTest = "hz")
+hz_test$multivariateNormality
+```
+
+y como podemos observar el test sale significativo y como nos indica el propio resultado **no se presenta normalidad multivariante**.
+
+## Reducción de la dimensión mediante un análisis de componentes principales
+
+En este apartado vamos a realizar directamente un ACP, ya que previamente hemos arreglado los datos outliers.
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+# Realización del ACP
+PCA<-prcomp(datos_no_outcome, scale=T, center = T)
+
+# El campo "rotation" del objeto "PCA" es una matriz cuyas columnas
+# son los coeficientes de las componentes principales, es decir, el
+# peso de cada variable en la correspondiente componente principal
+PCA$rotation
+
+# En el campo "sdev" del objeto "PCA" y con la función summary aplicada
+# al objeto, obtenemos información relevante: desviaciones típicas de 
+# cada componente principal, proporción de varianza explicada y acumulada.
+PCA$sdev
+summary(PCA)
+```
+Observamos la salida de esta orden, la cual nos realiza el ACP directamente. A continuación, obtenemos dos gráficos que representan la varianza explicada y acumulada para cada componente.
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+par(mfrow=c(1,1))
+
+# Proporción de varianza explicada
+varianza_explicada <- PCA$sdev^2 / sum(PCA$sdev^2)
+ggplot(data = data.frame(varianza_explicada, pc = 1:ncol(datos_no_outcome)),
+       aes(x = pc, y = varianza_explicada, fill=varianza_explicada )) +
+  geom_col(width = 0.3) +
+  scale_y_continuous(limits = c(0,0.6)) + theme_bw() +
+  labs(x = "Componente principal", y= " Proporción de varianza explicada")
+```
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+# Proporción de varianza explicada acumulada
+varianza_acum<-cumsum(varianza_explicada)
+ggplot( data = data.frame(varianza_acum, pc = 1:ncol(datos_no_outcome)),
+        aes(x = pc, y = varianza_acum ,fill=varianza_acum )) +
+  geom_col(width = 0.5) +
+  scale_y_continuous(limits = c(0,1)) +
+  theme_bw() +
+  labs(x = "Componente principal",
+       y = "Proporción varianza explicada acumulada")
+```
+
+Ahora, debemos elegir cuántas componentes principales vamos a elegir. Utilizaremos la *Regla de Abdi* para ver la media de las varianzas explicadas por las componentes principales y seleccionar aquellas cuya proporción de varianza explicada supere a dicha media.
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+PCA$sdev^2
+mean(PCA$sdev^2)
+```
+
+La media es 1 y podemos observar que solo las 3 primeras componentes principales superan esta media, con lo cual obtenemos 3 componentes principales.
+
+A continuación, apoyaremos esta decisión aplicando el *método gráfico del codo*. Graficaremos las varianzas acumaladas y observaremos cuándo su crecimiento se estanca.
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+fviz_nbclust(datos_normalizados, kmeans, method = 'wss')
+```
+y como podemos observar, se muestra un cambio brusco entre la tercera y la cuarta componente aproximadamente, con lo cual podemos intuir que el número idóneo de componentes principales es de 3.
+
+## Reducción de la dimensión mediante un análisis factorial
+
+Como ya hemos visto en el apartado anterior, tiene sentido plantear un análisis factorial. En primer lugar, vamos a obtener cuál sería el número idóneo de factores, realizando un Scree plot, el cual es una gráfica con los valores propios de la matriz policórica para quedarnos con los que son mayores que 1 y el número de factores es esa cantidad. También realizaremos un análisis paralelo que nos da el número de factores idóneo directamente.
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+poly_cor<-hetcor(datos_no_outcome)$correlations
+scree(poly_cor)
+fa.parallel(poly_cor,n.obs=200,fa="fa",fm="minres") 
+```
+
+Observando el gráfico y el resultado del análisis paralelo, el número óptimo de factores es 3, con lo cual vamos a crear los modelos con 3 factores:
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+modelo1<-fa(poly_cor,
+            nfactors = 3,
+            rotate = "none",
+            fm="mle") # modelo m?xima verosimilitud
+
+modelo2<-fa(poly_cor,
+            nfactors = 3,
+            rotate = "none",
+            fm="minres") # modelo m?nimo residuo
+```
+
+Por último, se comparan las comunalidades de cada modelo:
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+sort(modelo1$communality,decreasing = T)->c1
+sort(modelo2$communality,decreasing = T)->c2
+head(cbind(c1,c2))
+```
+
+También comparamos las unicidades, es decir, la proporción de varianza que no ha sido explicada por el factor (1-comunalidad):
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+sort(modelo1$uniquenesses,decreasing = T)->u1
+sort(modelo2$uniquenesses,decreasing = T)->u2
+head(cbind(u1,u2))
+```
+
+## Análisis discriminante: Clasificadores
+Finalmente, vamos a realizar un análisis discriminante, para poder obtener unos clasificadores en base a los datos que tenemos, para que se puedan realizar diagnosticos acerca de esta enfermedad. Vamos a realizar dos tipos de clasificadores, uno lineal y otro cuadrático:
+
+### Clasificador lineal
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+modelo_lda <- lda(formula = Outcome ~ Pregnancies + Glucose + BloodPressure + SkinThickness + Insulin + BMI + DiabetesPedigreeFunction + Age,data = datos)
+modelo_lda
+```
+
+### Clasificador cuadrático
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+modelo_qda <- qda(formula = Outcome ~ Pregnancies + Glucose + BloodPressure + SkinThickness + Insulin + BMI + DiabetesPedigreeFunction + Age,data = datos)
+modelo_qda
+```
+
+## Resultados de los Clasificadores
+
+Vamos a mostrar los resultados de los clasificadores obtenidos realizando una validación cruzada para así obtener un *training error* con el que guiarnos en la fiabilidad de los clasificadores. También mostramos los resultados en forma de una matriz de confusión, que también da información acerca los ejemplos clasificados correctamente.
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+pred <- predict(modelo_lda, dimen = 1)
+print("Matriz de confusión: ")
+confusionmatrix(datos$Outcome, pred$class)
+
+# Porcentaje de errores de clasificación
+trainig_error <- mean(datos$Outcome != pred$class) * 100
+paste("training_error=", trainig_error, "%")
+```
+
+```{r echo=TRUE, include=TRUE, warning=FALSE}
+pred <- predict(modelo_qda, dimen = 1)
+print("Matriz de confusión: ")
+confusionmatrix(datos$Outcome, pred$class)
+
+# Porcentaje de errores de clasificación
+trainig_error <- mean(datos$Outcome != pred$class) * 100
+paste("training_error=", trainig_error, "%")
+```
