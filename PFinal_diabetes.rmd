@@ -73,9 +73,9 @@ Por ejemplo, con la función `summary`, podemos ver las medidas típicas de la e
 
 ```{r echo=TRUE, include=TRUE, warning=FALSE}
 print("Medidas estadísticas:")
-summary(datos)
+summary(datos_no_outcome)
 print("Desviaciones típicas:")
-sapply(datos, sd)
+sapply(datos_no_outcome, sd)
 ```
 
 ## Análisis de los valores extremos
